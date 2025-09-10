@@ -1,23 +1,22 @@
+// src/App.jsx
 import React, { useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { v4 as uuidv4 } from "uuid";
 import { Search, Upload, Trash2, Link as LinkIcon, Save, Download } from "lucide-react";
 
 /**
- * 블로그 기반 Q&A 챗봇 – 단일 파일 React 앱
+ * 블로그 기반 Q&A 챗봇 – 단일 파일 React 앱 (완성본)
  * -------------------------------------------------
- * ✅ 기능
- * 1) 로컬 지식베이스(블로그 글) 등록/편집/삭제 (브라우저 localStorage 저장)
- * 2) 질문 입력 → TF-IDF 유사도 기반으로 관련 문단 추출 → 발췌 요약 + 관련 링크
- * 3) JSON 내보내기/불러오기 (백업/이전)
- * 4) 한국어 UI, 모바일 대응, 미니멀 디자인
- *
- * ⚠️ 본 앱은 100% 클라이언트에서 동작(정적 호스팅 가능). 대규모 데이터나 고도화가 필요하면
- *    추후 백엔드(RSS 수집, 벡터DB, RAG) 연동 권장.
+ * 기능
+ * 1) 지식베이스(블로그 글) 등록/삭제 (브라우저 localStorage 저장)
+ * 2) 질문 → TF-IDF 유사도 기반 발췌 요약 + 관련 링크
+ * 3) JSON 내보내기/불러오기
+ * 4) RSS 주소에서 글 자동 수집(수동 실행)  /api/rss?url=… 사용
  */
 
-const STORAGE_KEY = "blog_qa_kb_v1";
-
+//
+// ---------------------- 텍스트 유틸 ----------------------
+//
 function tokenizeKorean(text) {
   return (text || "")
     .toLowerCase()
@@ -114,12 +113,35 @@ function extractKeySentences(text, query, max = 3) {
   return ranked.slice(0, max).map((r) => r.s.trim());
 }
 
+//
+// ---------------------- 저장 유틸 ----------------------
+//
+const STORAGE_KEY = "blog_qa_kb_v1";
+function loadKB() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return [];
+    const data = JSON.parse(raw);
+    if (Array.isArray(data)) return data;
+  } catch (e) {}
+  return [];
+}
+function saveKB(kb) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(kb));
+  } catch (e) {}
+}
+
+//
+// ---------------------- 메인 컴포넌트 ----------------------
+//
 export default function App() {
   const [kb, setKb] = useState(() => loadKB());
   const [query, setQuery] = useState("");
   const [chat, setChat] = useState([]);
   const [activeTab, setActiveTab] = useState("chat");
 
+  // KB → 문단 청크로 전개
   const chunks = useMemo(() => {
     const out = [];
     kb.forEach((doc) => {
@@ -180,13 +202,11 @@ export default function App() {
     setKb(next);
     saveKB(next);
   }
-
   function handleDeleteDoc(id) {
     const next = kb.filter((d) => d.id !== id);
     setKb(next);
     saveKB(next);
   }
-
   function handleExport() {
     const blob = new Blob([JSON.stringify(kb, null, 2)], { type: "application/json" });
     const a = document.createElement("a");
@@ -194,7 +214,6 @@ export default function App() {
     a.download = `blog_kb_${new Date().toISOString().slice(0,10)}.json`;
     a.click();
   }
-
   function handleImport(file) {
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -241,12 +260,7 @@ export default function App() {
 
       <main className="max-w-5xl mx-auto px-4 py-6">
         {activeTab === "chat" && (
-          <ChatPanel
-            query={query}
-            setQuery={setQuery}
-            onAsk={handleAsk}
-            chat={chat}
-          />
+          <ChatPanel query={query} setQuery={setQuery} onAsk={handleAsk} chat={chat} />
         )}
         {activeTab === "admin" && (
           <AdminPanel onAdd={handleAddDoc} onImport={handleImport} onExport={handleExport} />
@@ -263,6 +277,9 @@ export default function App() {
   );
 }
 
+//
+// ---------------------- 하위 컴포넌트 ----------------------
+//
 function ChatPanel({ query, setQuery, onAsk, chat }) {
   const inputRef = useRef(null);
   return (
@@ -305,11 +322,10 @@ function AdminPanel({ onAdd, onImport, onExport }) {
   const [title, setTitle] = useState("");
   const [url, setUrl] = useState("");
   const [content, setContent] = useState("");
-  const [rssUrl, setRssUrl] = useState("");     // ⬅️ 추가
-  const [loadingRSS, setLoadingRSS] = useState(false); // ⬅️ 추가
+  const [rssUrl, setRssUrl] = useState("");
+  const [loadingRSS, setLoadingRSS] = useState(false);
   const fileInputRef = useRef(null);
 
-  // RSS 불러오기 로직 ⬇️
   async function importFromRSS() {
     if (!rssUrl.trim()) {
       alert("RSS 주소를 입력해주세요.");
@@ -327,14 +343,13 @@ function AdminPanel({ onAdd, onImport, onExport }) {
         return;
       }
 
-      // HTML 태그 제거용 간단 함수
+      // HTML 태그 제거
       const stripHtml = (html) => {
         const el = document.createElement("div");
         el.innerHTML = html || "";
         return el.textContent || el.innerText || "";
       };
 
-      // 상위 20개만 추가 (너무 많을 수 있으니)
       const picked = items.slice(0, 20);
       picked.forEach((it) => {
         onAdd({
@@ -409,21 +424,30 @@ function AdminPanel({ onAdd, onImport, onExport }) {
     </div>
   );
 }
-// ===== 저장소 유틸 =====
-const STORAGE_KEY = "blog_qa_kb_v1";
 
-function loadKB() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    const data = JSON.parse(raw);
-    if (Array.isArray(data)) return data;
-  } catch (e) {}
-  return [];
-}
-
-function saveKB(kb) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(kb));
-  } catch (e) {}
+function KBPanel({ kb, onDelete }) {
+  return (
+    <div className="rounded-2xl border bg-white p-0 overflow-hidden">
+      <div className="px-4 py-3 border-b bg-gray-50 text-sm text-gray-500 flex justify-between items-center">
+        <span>지식베이스 ({kb.length}개 문서)</span>
+      </div>
+      <div className="divide-y">
+        {kb.length === 0 && (
+          <div className="p-4 text-sm text-gray-500">등록된 문서가 없습니다. 관리자 탭에서 블로그 글을 추가하세요.</div>
+        )}
+        {kb.map((d) => (
+          <div key={d.id} className="p-4 grid gap-1">
+            <div className="flex items-center justify-between">
+              <div className="font-medium text-sm">{d.title}</div>
+              <button onClick={() => onDelete(d.id)} className="text-red-600 text-xs inline-flex items-center gap-1"><Trash2 className="w-3 h-3"/> 삭제</button>
+            </div>
+            {d.url && (
+              <a href={d.url} target="_blank" rel="noreferrer" className="text-xs text-blue-600 inline-flex items-center gap-1"><LinkIcon className="w-3 h-3"/> {d.url}</a>
+            )}
+            <div className="text-xs text-gray-600 line-clamp-3">{d.content}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
