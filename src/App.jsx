@@ -305,7 +305,53 @@ function AdminPanel({ onAdd, onImport, onExport }) {
   const [title, setTitle] = useState("");
   const [url, setUrl] = useState("");
   const [content, setContent] = useState("");
+  const [rssUrl, setRssUrl] = useState("");     // ⬅️ 추가
+  const [loadingRSS, setLoadingRSS] = useState(false); // ⬅️ 추가
   const fileInputRef = useRef(null);
+
+  // RSS 불러오기 로직 ⬇️
+  async function importFromRSS() {
+    if (!rssUrl.trim()) {
+      alert("RSS 주소를 입력해주세요.");
+      return;
+    }
+    try {
+      setLoadingRSS(true);
+      const res = await fetch(`/api/rss?url=${encodeURIComponent(rssUrl.trim())}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "RSS fetch failed");
+
+      const items = Array.isArray(data.items) ? data.items : [];
+      if (items.length === 0) {
+        alert("RSS에서 항목을 찾지 못했습니다.");
+        return;
+      }
+
+      // HTML 태그 제거용 간단 함수
+      const stripHtml = (html) => {
+        const el = document.createElement("div");
+        el.innerHTML = html || "";
+        return el.textContent || el.innerText || "";
+      };
+
+      // 상위 20개만 추가 (너무 많을 수 있으니)
+      const picked = items.slice(0, 20);
+      picked.forEach((it) => {
+        onAdd({
+          title: it.title || "제목 없음",
+          url: it.link || "",
+          content: stripHtml(it.content || ""),
+        });
+      });
+
+      alert(`${picked.length}개 글을 지식베이스에 추가했습니다.`);
+    } catch (e) {
+      console.error(e);
+      alert("RSS 불러오기에 실패했습니다. RSS 주소를 다시 확인해주세요.");
+    } finally {
+      setLoadingRSS(false);
+    }
+  }
 
   return (
     <div className="grid md:grid-cols-2 gap-4">
@@ -317,4 +363,49 @@ function AdminPanel({ onAdd, onImport, onExport }) {
           <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="원문 URL (선택)" className="rounded-xl border px-3 py-2 text-sm"/>
           <textarea value={content} onChange={(e) => setContent(e.target.value)} placeholder="본문 내용 붙여넣기" rows={10} className="rounded-xl border px-3 py-2 text-sm"/>
           <div className="flex justify-end gap-2">
-            <button onClick={() => { setTitle(""); setUrl(""); setContent(""); }} className="px-3 py-2 text-sm rounded-xl bg-gray
+            <button onClick={() => { setTitle(""); setUrl(""); setContent(""); }} className="px-3 py-2 text-sm rounded-xl bg-gray-100">초기화</button>
+            <button onClick={() => { onAdd({ title, url, content }); setTitle(""); setUrl(""); setContent(""); }} className="px-3 py-2 text-sm rounded-xl bg-gray-900 text-white">추가</button>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border bg-white p-4 shadow-sm">
+        <h2 className="text-base font-semibold flex items-center gap-2"><Save className="w-4 h-4"/> 지식베이스 불러오기/내보내기 + RSS</h2>
+        <p className="text-xs text-gray-500 mt-1">JSON 파일 백업/이동, RSS 주소에서 새 글 자동 수집(수동 실행)</p>
+
+        {/* JSON 백업/복원 */}
+        <div className="mt-4 flex items-center gap-2">
+          <button onClick={() => onExport()} className="px-3 py-2 text-sm rounded-xl bg-gray-100 inline-flex items-center gap-2"><Download className="w-4 h-4"/> 내보내기</button>
+          <input ref={fileInputRef} type="file" accept="application/json" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) onImport(f); e.currentTarget.value = ""; }}/>
+          <button onClick={() => fileInputRef.current?.click()} className="px-3 py-2 text-sm rounded-xl bg-gray-900 text-white">불러오기</button>
+        </div>
+
+        {/* RSS 불러오기 */}
+        <div className="mt-6 grid gap-2">
+          <input
+            value={rssUrl}
+            onChange={(e) => setRssUrl(e.target.value)}
+            placeholder="RSS 주소 입력 (예: https://블로그주소/rss, https://rss.blog.naver.com/아이디.xml)"
+            className="rounded-xl border px-3 py-2 text-sm"
+          />
+          <button
+            onClick={importFromRSS}
+            disabled={loadingRSS}
+            className="px-3 py-2 text-sm rounded-xl bg-gray-900 text-white disabled:opacity-60"
+          >
+            {loadingRSS ? "불러오는 중..." : "RSS에서 불러오기"}
+          </button>
+        </div>
+
+        <div className="mt-4 text-xs text-gray-500">
+          <p>불러오기 JSON 형식 예시:</p>
+          <pre className="bg-gray-50 p-3 rounded-xl overflow-auto text-[11px]">
+{`[
+  { "title": "입덧 관리 A to Z", "url": "https://example.com/nausea", "content": "..." }
+]`}
+          </pre>
+        </div>
+      </div>
+    </div>
+  );
+}
