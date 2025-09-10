@@ -409,3 +409,21 @@ function AdminPanel({ onAdd, onImport, onExport }) {
     </div>
   );
 }
+// ===== 저장소 유틸 =====
+const STORAGE_KEY = "blog_qa_kb_v1";
+
+function loadKB() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return [];
+    const data = JSON.parse(raw);
+    if (Array.isArray(data)) return data;
+  } catch (e) {}
+  return [];
+}
+
+function saveKB(kb) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(kb));
+  } catch (e) {}
+}
